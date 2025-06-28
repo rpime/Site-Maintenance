@@ -5,15 +5,18 @@ set -e
 DOMAIN="$1"
 REMOTE_USER="jubilee"
 
+# Timestamped audit directory
+TIMESTAMP=$(date +"%Y-%m-%d-%H%M%S")
+
 if [ "$DOMAIN" = "thejubileebible.org" ]; then
   REMOTE_BASE="\$HOME/public_html"
 else
   REMOTE_BASE="\$HOME/$DOMAIN"
 fi
 
-REMOTE_UPLOADS="\$REMOTE_BASE/wp-content/uploads"
+REMOTE_UPLOADS="$REMOTE_BASE/wp-content/uploads"
 TMP_REMOTE="/tmp/media-analysis-$DOMAIN"
-TMP_LOCAL="$HOME/media-audit/$DOMAIN"
+TMP_LOCAL="$HOME/media-audit/$DOMAIN/$TIMESTAMP"
 
 echo "🔐 Connecting to remote server..."
 
@@ -50,8 +53,12 @@ ssh "$REMOTE_USER" bash <<EOF2
   grep -oE '[^"]+\.(jpg|jpeg|png|webp)' "$TMP_REMOTE/pages.txt" | sort -u > "$TMP_REMOTE/used-urls.txt"
 
   echo "🗑  Detecting unused images..."
-  grep -Fvf "$TMP_REMOTE/used-urls.txt" "$TMP_REMOTE/all-images.txt" > "$TMP_REMOTE/unused-images.txt"
-  grep -Ff  "$TMP_REMOTE/used-urls.txt" "$TMP_REMOTE/all-images.txt" > "$TMP_REMOTE/used-images.txt"
+  awk -F/ '{print $NF}' "$TMP_REMOTE/used-urls.txt" > "$TMP_REMOTE/used-filenames.txt"
+  awk -F/ '{print $NF}' "$TMP_REMOTE/all-images.txt" > "$TMP_REMOTE/all-filenames.txt"
+
+  grep -Fxf "$TMP_REMOTE/used-filenames.txt" "$TMP_REMOTE/all-filenames.txt" > "$TMP_REMOTE/used-images.txt"
+  grep -Fvxf "$TMP_REMOTE/used-filenames.txt" "$TMP_REMOTE/all-filenames.txt" > "$TMP_REMOTE/unused-images.txt"
+
 EOF2
 
 echo "⬇️  Downloading results to $TMP_LOCAL..."
