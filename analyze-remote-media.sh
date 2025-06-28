@@ -8,6 +8,7 @@ REMOTE_USER="jubilee"
 # Timestamped audit directory
 TIMESTAMP=$(date +"%Y-%m-%d-%H%M%S")
 
+# Set correct remote base directory
 if [ "$DOMAIN" = "thejubileebible.org" ]; then
   REMOTE_BASE="\$HOME/public_html"
 else
@@ -15,15 +16,23 @@ else
 fi
 
 REMOTE_UPLOADS="$REMOTE_BASE/wp-content/uploads"
-TMP_REMOTE="/tmp/media-analysis-$DOMAIN"
+TMP_REMOTE="/tmp/media-analysis-$DOMAIN-$TIMESTAMP"
 TMP_LOCAL="$HOME/media-audit/$DOMAIN/$TIMESTAMP"
+LOG_FILE="$HOME/media-audit/$DOMAIN/deletion.log"
 
 echo "🔐 Connecting to remote server..."
 
-# Prepare domain-specific folder locally
+# Prepare local audit folder
 mkdir -p "$TMP_LOCAL"
 
-# Run analysis remotely
+# Cleanup old audits (>360 days) and log them
+mkdir -p "$(dirname "$LOG_FILE")"
+find "$HOME/media-audit/$DOMAIN/" -maxdepth 1 -type d -name "20*" -mtime +360 | while read olddir; do
+  echo "🗑️  Deleting old audit: $olddir at $(date)" >> "$LOG_FILE"
+  rm -rf "$olddir"
+done
+
+# Remote media audit
 ssh "$REMOTE_USER" bash <<EOF2
   set -e
 
@@ -37,34 +46,39 @@ ssh "$REMOTE_USER" bash <<EOF2
     wp post get "\$id" --field=post_content >> "$TMP_REMOTE/pages.txt"
   done
 
-  # Future: Uncomment to include posts and widgets
+  # Future: Include posts and widget content
   # wp post list --post_type=post --post_status=publish --field=ID | while read id; do
   #   wp post get "\$id" --field=post_content >> "$TMP_REMOTE/pages.txt"
   # done
 
   echo "🎨 Exporting CSS references..."
-  find wp-content -type f -name '*.css' -exec cat {} + >> "$TMP_REMOTE/pages.txt"
+  find wp-content -type f -name '*.css' -exec cat {} + >> "$TMP_REMOTE/pages.txt" 2>/dev/null
 
   echo "🖼  Cataloging all images in uploads..."
   find "$REMOTE_UPLOADS" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \) \
     > "$TMP_REMOTE/all-images.txt"
 
   echo "🔗 Detecting used images..."
-  grep -oE '[^"]+\.(jpg|jpeg|png|webp)' "$TMP_REMOTE/pages.txt" | sort -u > "$TMP_REMOTE/used-urls.txt"
+  sed -E -n 's/.*[("'"'"']([^"'"'"')]+\.(jpg|jpeg|png|webp)).*/\1/p' "$TMP_REMOTE/pages.txt" | sort -u > "$TMP_REMOTE/used-urls.txt"
 
   echo "🗑  Detecting unused images..."
-  awk -F/ '{print $NF}' "$TMP_REMOTE/used-urls.txt" > "$TMP_REMOTE/used-filenames.txt"
-  awk -F/ '{print $NF}' "$TMP_REMOTE/all-images.txt" > "$TMP_REMOTE/all-filenames.txt"
+  awk -F/ '{print \$NF}' "$TMP_REMOTE/used-urls.txt" > "$TMP_REMOTE/used-filenames.txt"
+  awk -F/ '{print \$NF}' "$TMP_REMOTE/all-images.txt" > "$TMP_REMOTE/all-filenames.txt"
 
   grep -Fxf "$TMP_REMOTE/used-filenames.txt" "$TMP_REMOTE/all-filenames.txt" > "$TMP_REMOTE/used-images.txt"
   grep -Fvxf "$TMP_REMOTE/used-filenames.txt" "$TMP_REMOTE/all-filenames.txt" > "$TMP_REMOTE/unused-images.txt"
-
 EOF2
 
 echo "⬇️  Downloading results to $TMP_LOCAL..."
 scp -P 2222 jubilee:"$TMP_REMOTE/used-images.txt" "$TMP_LOCAL/used-images.txt"
 scp -P 2222 jubilee:"$TMP_REMOTE/unused-images.txt" "$TMP_LOCAL/unused-images.txt"
 
+echo "📦 Bundling into ZIP archive..."
+cd "$HOME/media-audit/$DOMAIN"
+zip -rq "$TIMESTAMP.zip" "$TIMESTAMP"
+
 echo "✅ Done. Check:"
 echo "  - $TMP_LOCAL/used-images.txt"
 echo "  - $TMP_LOCAL/unused-images.txt"
+echo "  - $HOME/media-audit/$DOMAIN/$TIMESTAMP.zip"
+echo "  - $LOG_FILE"
