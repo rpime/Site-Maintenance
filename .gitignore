@@ -1,0 +1,19 @@
+# macOS system files
+.DS_Store
+
+# Logs and temporary analysis results
+/media-audit/
+/tmp/
+*.log
+*.bak
+*.swp
+*.swo
+
+# Secrets or credentials if added later
+secrets.php
+
+# Editor files
+*.code-workspace
+
+# Shell history
+.bash_history
