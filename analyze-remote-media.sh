@@ -1,11 +1,29 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
-DOMAIN="$1"
-REMOTE_USER="jubilee"
+# Prompt user for domain selection
+declare -A DOMAINS=(
+  [1]="thejubileebible.org"
+  [2]="stendalministries.com"
+  [3]="cpcsociety.ca"
+  [4]="bibliadeljubileo.org"
+)
 
-# Timestamped audit directory
+echo "Select a domain to analyze remote media:"
+for i in "${!DOMAINS[@]}"; do
+  echo "$i. ${DOMAINS[$i]}"
+done
+
+read -rp "Enter the number of the domain (1-${#DOMAINS[@]}): " SELECTED
+DOMAIN="${DOMAINS[$SELECTED]}"
+
+if [[ -z "$DOMAIN" ]]; then
+  echo "❌ Invalid selection. Aborting."
+  exit 1
+fi
+
+REMOTE_USER="jubilee"
 TIMESTAMP=$(date +"%Y-%m-%d-%H%M%S")
 
 # Set correct remote base directory
@@ -17,8 +35,8 @@ fi
 
 REMOTE_UPLOADS="$REMOTE_BASE/wp-content/uploads"
 TMP_REMOTE="/tmp/media-analysis-$DOMAIN-$TIMESTAMP"
-TMP_LOCAL="$HOME/media-audit/$DOMAIN/$TIMESTAMP"
-LOG_FILE="$HOME/media-audit/$DOMAIN/deletion.log"
+TMP_LOCAL="$HOME/git/site-maint/media-audit/$DOMAIN/$TIMESTAMP"
+LOG_FILE="$HOME/git/site-maint/media-audit/$DOMAIN/deletion.log"
 
 echo "🔐 Connecting to remote server..."
 
@@ -27,7 +45,7 @@ mkdir -p "$TMP_LOCAL"
 
 # Cleanup old audits (>360 days) and log them
 mkdir -p "$(dirname "$LOG_FILE")"
-find "$HOME/media-audit/$DOMAIN/" -maxdepth 1 -type d -name "20*" -mtime +360 | while read olddir; do
+find "$HOME/git/site-maint/media-audit/$DOMAIN/" -maxdepth 1 -type d -name "20*" -mtime +360 | while read olddir; do
   echo "🗑️  Deleting old audit: $olddir at $(date)" >> "$LOG_FILE"
   rm -rf "$olddir"
 done
@@ -59,7 +77,7 @@ ssh "$REMOTE_USER" bash <<EOF2
     > "$TMP_REMOTE/all-images.txt"
 
   echo "🔗 Detecting used images..."
-  sed -E -n 's/.*[("'"'"']([^"'"'"')]+\.(jpg|jpeg|png|webp)).*/\1/p' "$TMP_REMOTE/pages.txt" | sort -u > "$TMP_REMOTE/used-urls.txt"
+  sed -E -n 's/.*[\("\'''']([^"\'''')]+\.(jpg|jpeg|png|webp)).*/\1/p' "$TMP_REMOTE/pages.txt" | sort -u > "$TMP_REMOTE/used-urls.txt"
 
   echo "🗑  Detecting unused images..."
   awk -F/ '{print \$NF}' "$TMP_REMOTE/used-urls.txt" > "$TMP_REMOTE/used-filenames.txt"
@@ -74,11 +92,11 @@ scp -P 2222 jubilee:"$TMP_REMOTE/used-images.txt" "$TMP_LOCAL/used-images.txt"
 scp -P 2222 jubilee:"$TMP_REMOTE/unused-images.txt" "$TMP_LOCAL/unused-images.txt"
 
 echo "📦 Bundling into ZIP archive..."
-cd "$HOME/media-audit/$DOMAIN"
+cd "$HOME/git/site-maint/media-audit/$DOMAIN"
 zip -rq "$TIMESTAMP.zip" "$TIMESTAMP"
 
 echo "✅ Done. Check:"
 echo "  - $TMP_LOCAL/used-images.txt"
 echo "  - $TMP_LOCAL/unused-images.txt"
-echo "  - $HOME/media-audit/$DOMAIN/$TIMESTAMP.zip"
+echo "  - $HOME/git/site-maint/media-audit/$DOMAIN/$TIMESTAMP.zip"
 echo "  - $LOG_FILE"

@@ -1,9 +1,28 @@
-#!/usr/bin/env bash
+#!/opt/homebrew/bin/bash
 
 set -e
 
-DOMAIN="$1"
-MODE="$2"
+# Define available domains and their remote paths
+declare -A DOMAINS
+DOMAINS["1"]="thejubileebible.org"
+DOMAINS["2"]="stendalministries.com"
+DOMAINS["3"]="cpcsociety.ca"
+DOMAINS["4"]="bibliadeljubileo.org"
+
+# Prompt user to select a domain
+echo "Select a domain to review unused media:"
+for i in "${!DOMAINS[@]}"; do
+  echo "$i. ${DOMAINS[$i]}"
+done
+read -rp "Enter the number of the domain (1-${#DOMAINS[@]}): " selection
+
+DOMAIN="${DOMAINS[$selection]}"
+if [[ -z "$DOMAIN" ]]; then
+  echo "❌ Invalid selection. Exiting."
+  exit 1
+fi
+
+MODE="$1"
 DRY_RUN=false
 if [[ "$MODE" == "--dry-run" ]]; then
   DRY_RUN=true
@@ -13,7 +32,13 @@ AUDIT_ROOT="$HOME/git/site-maint/media-audit/$DOMAIN"
 LATEST_DIR="$AUDIT_ROOT/latest"
 TIMESTAMP=$(date +"%Y-%m-%d-%H%M%S")
 LOGFILE="$AUDIT_ROOT/deletion.log"
-REMOTE_UPLOADS="~/public_html/wp-content/uploads"
+
+if [[ "$DOMAIN" == "thejubileebible.org" ]]; then
+  REMOTE_UPLOADS="~/public_html/wp-content/uploads"
+else
+  REMOTE_UPLOADS="~/$DOMAIN/wp-content/uploads"
+fi
+
 BACKUP_NAME="unused-images-backup-$TIMESTAMP.zip"
 
 # Resolve the full path or use fallback
