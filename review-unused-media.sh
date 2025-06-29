@@ -3,14 +3,20 @@
 set -e
 
 DOMAIN="$1"
-AUDIT_ROOT="$HOME/media-audit/$DOMAIN"
+MODE="$2"
+DRY_RUN=false
+if [[ "$MODE" == "--dry-run" ]]; then
+  DRY_RUN=true
+fi
+
+AUDIT_ROOT="$HOME/git/site-maint/media-audit/$DOMAIN"
 LATEST_DIR="$AUDIT_ROOT/latest"
 TIMESTAMP=$(date +"%Y-%m-%d-%H%M%S")
 LOGFILE="$AUDIT_ROOT/deletion.log"
 REMOTE_UPLOADS="~/public_html/wp-content/uploads"
 BACKUP_NAME="unused-images-backup-$TIMESTAMP.zip"
 
-# Resolve the full path or use fallback if readlink -f is unavailable
+# Resolve the full path or use fallback
 if command -v greadlink &>/dev/null; then
   UNUSED_FILE=$(greadlink -f "$LATEST_DIR/unused-images.txt") || UNUSED_FILE="$LATEST_DIR/unused-images.txt"
 elif command -v readlink &>/dev/null && readlink -f "$LATEST_DIR/unused-images.txt" &>/dev/null; then
@@ -19,7 +25,7 @@ else
   UNUSED_FILE="$LATEST_DIR/unused-images.txt"
 fi
 
-# 🔍 DEBUG block goes HERE — now $UNUSED_FILE is defined
+# 🔍 DEBUG info
 echo "DEBUG: Bash version: $BASH_VERSION"
 echo "DEBUG: Resolved UNUSED_FILE: $UNUSED_FILE"
 ls -l "$UNUSED_FILE"
@@ -35,6 +41,28 @@ fi
 echo "🗂  Found unused images list at: $UNUSED_FILE"
 echo "📋 Previewing files to delete:"
 cat "$UNUSED_FILE"
+
+# Build array of files from list
+TO_DELETE=()
+while IFS= read -r line; do
+  TO_DELETE+=("$line")
+done < "$UNUSED_FILE"
+
+if $DRY_RUN; then
+  DRY_RUN_LOG="$LATEST_DIR/deletion-preview.txt"
+  DRY_RUN_SHORT="$LATEST_DIR/deletion-preview-short.txt"
+
+  printf "%s\n" "${TO_DELETE[@]}" > "$DRY_RUN_SHORT"
+  for f in "${TO_DELETE[@]}"; do
+    echo "$REMOTE_UPLOADS/$f"
+  done > "$DRY_RUN_LOG"
+
+  echo "✅ Skipping confirmation — dry-run mode active."
+  echo "🛑 Dry-run mode: skipping deletion and remote commands."
+  echo "📄 Full dry-run deletion list saved to: $DRY_RUN_LOG"
+  echo "📄 Short (filename-only) list saved to: $DRY_RUN_SHORT"
+  exit 0
+fi
 
 read -rp "⚠️  Proceed with deletion? (y = delete, b = backup then delete, N = abort): " CONFIRM
 if [[ "$CONFIRM" != "y" && "$CONFIRM" != "b" ]]; then
@@ -72,8 +100,8 @@ ssh jubilee bash <<EOF2
 EOF2
 
 echo "🪵 Logging deletions..."
-while read -r fname; do
+for fname in "${TO_DELETE[@]}"; do
   echo "$fname deleted on $TIMESTAMP" >> "$LOGFILE"
-done < "$UNUSED_FILE"
+done
 
 echo "✅ Deletion complete. Log saved to: $LOGFILE"
