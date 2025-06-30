@@ -17,3 +17,11 @@
 
 # Secrets or sensitive config (if created)
 secrets.php
+
+# Ignore log files and zip backups
+*.log
+*.zip
+
+# Allow tracking of TU backup scripts
+!bkp/launch-tu-dashboard.scpt
+!bkp/notify-tu-backup.scpt
